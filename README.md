@@ -1,11 +1,11 @@
 # Farming Simulator Telemetry
 
-![GitHub code size](https://img.shields.io/github/languages/code-size/marciel032/FarmingSimulatorTelemetry?style=for-the-badge)
-![GitHub forks](https://img.shields.io/github/forks/marciel032/FarmingSimulatorTelemetry?style=for-the-badge)
-![GitHub pull requests](https://img.shields.io/github/issues-pr-raw/marciel032/farmingsimulatortelemetry?style=for-the-badge)
-![GitHub closed pull requests](https://img.shields.io/github/issues-pr-closed-raw/marciel032/farmingsimulatortelemetry?style=for-the-badge)
-![GitHub contributors](https://img.shields.io/github/contributors/marciel032/farmingsimulatortelemetry?style=for-the-badge)
-
+** This is a fork from the wonderful work of       
+<a href="https://github.com/Marciel032">
+  <img src="https://avatars3.githubusercontent.com/Marciel032" width="100px;" alt="Marciel Grützmann"/><br>
+  <sub>
+    <b>Marciel Grützmann</b>
+  </sub>
 
 > This mod allows reading data from farming simulator vehicles
 
@@ -23,33 +23,6 @@ The project is still under development and future updates will focus on the foll
 - [ ] Read wiper state when is snowing
 - [x] Read horn state
 - [x] Read attached implements state
-
-## 💻 Prerequisites
-
-Before starting, make sure you have met the following requirements:
-* Use Visual studio 2019 to compile the Demo.
-
-## 🚀 Installing
-
-Put mod telemetry in farming mods folder.
-When game is running, the mod will write data about telemetry on local pipeline.
-
-## ☕ Using
-
-Start the telemetry reader
-```csharp
-var telemetryReader = new FSTelemetryReader();
-telemetryReader.OnTelemetryRead += TelemetryReader_OnTelemetryRead;
-telemetryReader.Start();
-```
-
-The event OnTelemetryRead is called on new information is writed
-```csharp
-private void TelemetryReader_OnTelemetryRead(FSTelemetry telemetry)
-{
-    ...
-}
-```
 
 ## 💾 Current data available
 
@@ -92,6 +65,8 @@ private void TelemetryReader_OnTelemetryRead(FSTelemetry telemetry)
 * AttachedImplementsSelected
 * AttachedImplementsTurnedOn
 * AttachedImplementsWear
+* AttachedImplementsUnfolded
+* AttachedImplementsisFoldable
 * AngleRotation
 * Mass
 * TotalMass

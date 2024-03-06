@@ -1,14 +1,9 @@
 FSTelemetry = {}
+
 local FSContext = {
 	UpdateInterval = {
 		Target = 16.66, --Restrict to 60 FPS. 16.66 = 1000ms / 60 frames
 		Current = 0.0
-	},
-	PipeControl = {
-		Pipe = nil,
-		PipeName = "\\\\.\\pipe\\fssimx",
-		RefreshRate = 300,
-		RefreshCurrent = -1
 	},
 	MaxDepthImplements = 10,
 	Telemetry = {}
@@ -25,21 +20,17 @@ function FSTelemetry:update(dt)
 	if FSContext.UpdateInterval.Current >= FSContext.UpdateInterval.Target then
 		FSContext.UpdateInterval.Current = 0;
 
-		FSTelemetry:RefreshPipe();
-		if FSContext.PipeControl.Pipe ~= nil then
-			FSContext.Telemetry.IsDrivingVehicle = FSTelemetry:IsDrivingVehicle();
-			if FSContext.Telemetry.IsDrivingVehicle then
-				FSTelemetry:ProcessVehicleData();
-			else
-				FSTelemetry:ClearVehicleTelemetry();
-			end;
-
-			FSTelemetry:ProcessGameData();
-			FSTelemetry:WriteTelemetry();
+		FSContext.Telemetry.IsDrivingVehicle = FSTelemetry:IsDrivingVehicle();
+		if FSContext.Telemetry.IsDrivingVehicle then
+			FSTelemetry:ProcessVehicleData();
+		else
+			FSTelemetry:ClearVehicleTelemetry();
 		end;
-		--print(DebugUtil.printTableRecursively(g_currentMission.controlledVehicle,".",0,5));
+
+		FSTelemetry:ProcessGameData();
+		FSTelemetry:WriteTelemetry();
 	end;
-end
+end;
 
 function FSTelemetry:ClearGameTelemetry()
 	FSContext.Telemetry.Money = 0.0;
@@ -103,6 +94,8 @@ function FSTelemetry:ClearAttachedImplements()
 	FSContext.Telemetry.AttachedImplementsLowered = {};
 	FSContext.Telemetry.AttachedImplementsSelected = {};
 	FSContext.Telemetry.AttachedImplementsTurnedOn = {};
+	FSContext.Telemetry.AttachedImplementsUnfolded = {};
+	FSContext.Telemetry.AttachedImplementsisFoldable = {};
 	FSContext.Telemetry.AttachedImplementsWear = {};
 end
 
@@ -155,41 +148,43 @@ function FSTelemetry:ProcessVehicleData()
 end
 
 function FSTelemetry:ProcessAttachedImplements(vehicle, invertX, x, depth)
-	local attachedImplements = vehicle:getAttachedImplements();
-	if attachedImplements == nil then
-		return;
-	end
+    local attachedImplements = vehicle:getAttachedImplements()
+    if not attachedImplements then
+        return
+    end
 
     for _, implement in pairs(attachedImplements) do
-		local object = implement.object
-		if object ~= nil and object.schemaOverlay ~= nil then
-			local wear = object.getDamageAmount ~= nil and object:getDamageAmount() or 0.0;
-			local selected = object:getIsSelected()
-            local turnedOn = object.getIsTurnedOn ~= nil and object:getIsTurnedOn()
-			local lowered = object.getIsLowered ~= nil and object:getIsLowered(true);
-            local jointDesc = vehicle.schemaOverlay.attacherJoints[implement.jointDescIndex];
-			if jointDesc ~= nil then
-				local invertX = invertX ~= jointDesc.invertX
-                local baseX
-                if invertX then
-                    baseX = x - 1 + (1 - jointDesc.x)
-                else
-                    baseX = x + jointDesc.x
-                end
-				baseX = math.ceil(baseX);
+        local object = implement.object
+        if object and object.schemaOverlay then
+			local isFoldable = object.spec_foldable ~= nil
+            local wear = object.getDamageAmount and object:getDamageAmount() or 0.0
+            local selected = object:getIsSelected()
+            local turnedOn = object.getIsTurnedOn and object:getIsTurnedOn()
+            local lowered = object.getIsLowered and object:getIsLowered(true)
+            local unfolded = isFoldable and object.getIsUnfolded and object:getIsUnfolded() or false
+            
+            local jointDesc = vehicle.schemaOverlay.attacherJoints[implement.jointDescIndex]
+            if jointDesc then
+                local invertX = invertX ~= jointDesc.invertX
+                local baseX = invertX and x - 1 + (1 - jointDesc.x) or x + jointDesc.x
+                baseX = math.ceil(baseX)
 
-				FSContext.Telemetry.AttachedImplementsPosition[baseX] = baseX;
-				FSContext.Telemetry.AttachedImplementsLowered[baseX] = lowered;
-				FSContext.Telemetry.AttachedImplementsSelected[baseX] = selected;
-				FSContext.Telemetry.AttachedImplementsTurnedOn[baseX] = turnedOn;
-				FSContext.Telemetry.AttachedImplementsWear[baseX] = wear;
-				if FSContext.MaxDepthImplements > depth then
-					FSTelemetry:ProcessAttachedImplements(object, invertX, baseX, depth + 1)
-				end
-			end
-		end
-	end
+                FSContext.Telemetry.AttachedImplementsPosition[baseX] = baseX
+                FSContext.Telemetry.AttachedImplementsLowered[baseX] = lowered
+                FSContext.Telemetry.AttachedImplementsSelected[baseX] = selected
+                FSContext.Telemetry.AttachedImplementsTurnedOn[baseX] = turnedOn
+                FSContext.Telemetry.AttachedImplementsUnfolded[baseX] = unfolded
+				FSContext.Telemetry.AttachedImplementsisFoldable[baseX] = isFoldable
+                FSContext.Telemetry.AttachedImplementsWear[baseX] = wear
+
+                if FSContext.MaxDepthImplements > depth then
+                    FSTelemetry:ProcessAttachedImplements(object, invertX, baseX, depth + 1)
+                end
+            end
+        end
+    end
 end
+
 
 function FSTelemetry:ProcessMotorFanEnabled(motorized)
 	if motorized ~= nil and motorized.motorFan ~= nil then
@@ -505,88 +500,70 @@ function FSTelemetry:ProcessGameEdition()
 	end
 end
 
-function  FSTelemetry:BuildHeaderText()
-	local text = FSTelemetry:AddText("HEADER", "");
-	for k, v in pairs(FSContext.Telemetry) do
-		text = FSTelemetry:AddText(k, text);
-	end
-	return text;
-end 
+-- Process telemetry for output
 
 function FSTelemetry:BuildBodyText()
-	local text = FSTelemetry:AddText("BODY", "");
-	for key, value in pairs(FSContext.Telemetry) do
-		text = FSTelemetry:AddText(FSTelemetry:GetTextValue(value), text);
-	end
-	return text;
+    local text = "{"
+    local isFirstPair = true
+    for key, value in pairs(FSContext.Telemetry) do
+        if not isFirstPair then
+            text = text .. ", "
+        end
+        text = text .. FSTelemetry:AddKeyValue(key, value)
+        isFirstPair = false
+    end
+    return text .. "}"
 end
 
-function FSTelemetry:GetTextValue(value)
-	local type = type(value);
-	local text = "";
-	if type == "boolean" then
-		text = FSTelemetry:GetTextBoolean(value);
-	elseif type == "string" then
-		text = value;
-	elseif type =="number" then
-		text = FSTelemetry:GetTextDecimal(value);
-	elseif type =="table" then
-		text = FSTelemetry:GetTextTable(value);
+function FSTelemetry:AddKeyValue(key, value)
+    local valueStr = ""
+    local valueType = type(value)
+
+    if valueType == "boolean" or valueType == "number" then
+        valueStr = tostring(value)
+    elseif valueType == "string" then
+        valueStr = '"' .. value .. '"'
+    elseif valueType == "table" then
+        valueStr = "{"
+        local isFirst = true
+        for id, val in pairs(value) do
+            if not isFirst then
+                valueStr = valueStr .. ", "
+            end
+            valueStr = valueStr .. '"' .. id .. '":'
+
+            if type(val) == "boolean" or type(val) == "number" then
+                valueStr = valueStr .. tostring(val)
+            elseif type(val) == "string" then
+                valueStr = valueStr .. '"' .. val .. '"'
+            else
+                valueStr = valueStr .. "null"
+            end
+            
+            isFirst = false
+        end
+        valueStr = valueStr .. "}"
+        if isFirst then
+            valueStr = "{}"
+        end
+    else
+        valueStr = "null"
+    end
+
+    return '"' .. key .. '":' .. valueStr
+end
+
+-- Output
+
+function FSTelemetry:WriteTelemetry(content)
+	local file = io.open("fstelemetry.sim", "w");
+	if file ~= nil then
+		file:write(FSTelemetry:BuildBodyText());
+		file:close();
+		return true;
 	end;
-	return text;
+	return false;
 end
 
-function FSTelemetry:GetTextDecimal(value)
-	local integerPart, floatPart = math.modf(value);
-	local numberText;
-	if floatPart > 0 then
-		numberText = string.format("%.2f", value);
-	else
-		numberText = string.format("%d", integerPart);
-	end
-	return numberText;
-end
-
-function FSTelemetry:GetTextBoolean(value)
-	return value and "1" or "0";
-end
-
-function FSTelemetry:GetTextTable(valueTable)
-	local text = "";
-	for key, value in pairs(valueTable) do
-		text = text .. FSTelemetry:GetTextValue(value) .. "¶";
-	end
-	return text;
-end
-
-function FSTelemetry:AddText(value, text)
-	return text .. value .. "§";
-end
-
-function FSTelemetry:WriteTelemetry()
-	if FSContext.PipeControl.RefreshCurrent == 0 then
-		FSContext.PipeControl.Pipe:write(FSTelemetry:BuildHeaderText());
-		FSContext.PipeControl.Pipe:flush();
-	end
-
-	FSContext.PipeControl.Pipe:write(FSTelemetry:BuildBodyText());
-	FSContext.PipeControl.Pipe:flush();
-end
-
-function FSTelemetry:RefreshPipe()
-	FSContext.PipeControl.RefreshCurrent = FSContext.PipeControl.RefreshCurrent + 1;
-	if FSContext.PipeControl.RefreshCurrent >= FSContext.PipeControl.RefreshRate then
-		FSContext.PipeControl.RefreshCurrent = 0;
-	end
-
-	if FSContext.PipeControl.RefreshCurrent == 0 then
-		if FSContext.PipeControl.Pipe ~= nil then
-			FSContext.PipeControl.Pipe:flush();
-			FSContext.PipeControl.Pipe:close();
-		end
-
-		FSContext.PipeControl.Pipe = io.open(FSContext.PipeControl.PipeName, "w");
-	end
-end
-
-addModEventListener(FSTelemetry);
+addModEventListener(FSTelemetry)
+	
